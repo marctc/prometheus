@@ -34,6 +34,7 @@ enum MetricType {
   SUMMARY    = 2;
   UNTYPED    = 3;
   HISTOGRAM  = 4;
+  FLOAT_HISTOGRAM  = 5;
 }
 
 message Gauge {
@@ -77,6 +78,23 @@ message Histogram {
   SparseBuckets sb_positive = 8; // Positive sparse buckets.
 }
 
+message FloatHistogram {
+  double sample_count = 1;
+  double sample_sum   = 2;
+  repeated Bucket bucket       = 3; // Ordered in increasing order of upper_bound, +Inf bucket is optional.
+  // Sparse bucket (sb) stuff:
+  // The sb_schema defines the bucket schema. Currently, valid numbers are -4 <= n <= 8.
+  // They are all for base-2 bucket schemas, where 1 is a bucket boundary in each case, and
+  // then each power of two is divided into 2^n logarithmic buckets.
+  // Or in other words, each bucket boundary is the previous boundary times 2^(2^-n).
+  // In the future, more bucket schemas may be added using numbers < -4 or > 8.
+  sint32 sb_schema          = 4;
+  double sb_zero_threshold  = 5; // Breadth of the zero bucket.
+  double sb_zero_count      = 6; // Count in zero bucket.
+  FloatSparseBuckets sb_negative = 7; // Negative sparse buckets.
+  FloatSparseBuckets sb_positive = 8; // Positive sparse buckets.
+}
+
 message Bucket {
   uint64   cumulative_count = 1; // Cumulative in increasing order.
   double   upper_bound      = 2; // Inclusive.
@@ -92,6 +110,15 @@ message SparseBuckets {
   repeated sint64 delta = 2; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
 }
 
+message FloatSparseBuckets {
+  message Span {
+    sint32 offset = 1; // Gap to previous span, or starting point for 1st span (which can be negative).
+    uint32 length = 2; // Length of consecutive buckets.
+  }
+  repeated Span span    = 1;
+  repeated double delta = 2; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
+}
+
 message Exemplar {
   repeated LabelPair                 label     = 1;
   double                    value     = 2;
@@ -105,6 +132,7 @@ message Metric {
   Summary   summary      = 4;
   Untyped   untyped      = 5;
   Histogram histogram    = 7;
+  FloatHistogram float_histogram    = 8;
   int64     timestamp_ms = 6;
 }
 

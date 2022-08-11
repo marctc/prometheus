@@ -120,6 +120,21 @@ func (p *ProtobufParser) Series() ([]byte, *int64, float64) {
 				v = float64(bb[p.fieldPos].GetCumulativeCount())
 			}
 		}
+	case dto.MetricType_FLOAT_HISTOGRAM:
+		fh := m.GetFloatHistogram()
+		switch p.fieldPos {
+		case -2:
+			v = float64(fh.GetSampleCount())
+		case -1:
+			v = fh.GetSampleSum()
+		default:
+			bb := fh.GetBucket()
+			if p.fieldPos >= len(bb) {
+				v = fh.GetSampleCount()
+			} else {
+				v = float64(bb[p.fieldPos].GetCumulativeCount())
+			}
+		}
 	default:
 		panic("encountered unexpected metric type, this is a bug")
 	}
@@ -167,6 +182,43 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram) {
 	// general, but proto3 has no distinction between unset and
 	// default. Need to avoid in the final format.
 	return p.metricBytes.Bytes(), nil, &sh
+}
+
+// FloatHistogram returns the bytes of a series with a sparse float histogram as a
+// value, the timestamp if set, and the sparse float histogram in the current
+// sample.
+func (p *ProtobufParser) FloatHistogram() ([]byte, *int64, *histogram.FloatHistogram) {
+	var (
+		m  = p.mf.GetMetric()[p.metricPos]
+		ts = m.GetTimestampMs()
+		h  = m.GetFloatHistogram()
+	)
+	fh := histogram.FloatHistogram{
+		Count:           h.GetSampleCount(),
+		Sum:             h.GetSampleSum(),
+		ZeroThreshold:   h.GetSbZeroThreshold(),
+		ZeroCount:       h.GetSbZeroCount(),
+		Schema:          h.GetSbSchema(),
+		PositiveSpans:   make([]histogram.Span, len(h.GetSbPositive().GetSpan())),
+		PositiveBuckets: h.GetSbPositive().GetDelta(),
+		NegativeSpans:   make([]histogram.Span, len(h.GetSbNegative().GetSpan())),
+		NegativeBuckets: h.GetSbNegative().GetDelta(),
+	}
+	for i, span := range h.GetSbPositive().GetSpan() {
+		fh.PositiveSpans[i].Offset = span.GetOffset()
+		fh.PositiveSpans[i].Length = span.GetLength()
+	}
+	for i, span := range h.GetSbNegative().GetSpan() {
+		fh.NegativeSpans[i].Offset = span.GetOffset()
+		fh.NegativeSpans[i].Length = span.GetLength()
+	}
+	if ts != 0 {
+		return p.metricBytes.Bytes(), &ts, &fh
+	}
+	// Nasty hack: Assume that ts==0 means no timestamp. That's not true in
+	// general, but proto3 has no distinction between unset and
+	// default. Need to avoid in the final format.
+	return p.metricBytes.Bytes(), nil, &fh
 }
 
 // Help returns the metric name and help text in the current entry.
